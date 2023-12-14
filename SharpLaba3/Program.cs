@@ -1,8 +1,10 @@
-﻿using System;
+﻿using Microsoft.Data.Sqlite;
+using System;
 using System.IO;
 
 class Program
 {
+
     private static (string dalType, string connectionString) GetConfiguration(string filePath)
     {
         string dalType = null;
@@ -14,12 +16,82 @@ class Program
             {
                 dalType = line.Split(':')[1];
             }
-            if (dalType == "SQL" && line.StartsWith("SQLConnectionString:"))
+            if (dalType == "SQLite" && line.StartsWith("SQLiteConnectionString:"))
             {
                 connectionString = line.Split(':')[1];
             }
         }
         return (dalType, connectionString);
+    }
+
+    public class DatabaseInitializer
+    {
+        private readonly string _connectionString;
+
+        public DatabaseInitializer(string connectionString)
+        {
+            _connectionString = connectionString;
+        }
+
+        public void InitializeDatabase()
+        {
+            using (var connection = new SqliteConnection(_connectionString))
+            {
+                connection.Open();
+                EnsureTableExists(connection, "Stores", GetStoresTableSchema());
+                EnsureTableExists(connection, "Products", GetProductsTableSchema());
+            }
+        }
+
+        private void EnsureTableExists(SqliteConnection connection, string tableName, string tableSchema)
+        {
+            var tableExists = TableExists(connection, tableName);
+            if (!tableExists)
+            {
+                CreateTable(connection, tableSchema);
+            }
+        }
+
+        private bool TableExists(SqliteConnection connection, string tableName)
+        {
+            string checkTableQuery = $"SELECT name FROM sqlite_master WHERE type='table' AND name='{tableName}';";
+            using (var command = new SqliteCommand(checkTableQuery, connection))
+            {
+                var result = command.ExecuteScalar();
+                return result != null && result.ToString() == tableName;
+            }
+        }
+
+        private void CreateTable(SqliteConnection connection, string tableSchema)
+        {
+            using (var command = new SqliteCommand(tableSchema, connection))
+            {
+                command.ExecuteNonQuery();
+            }
+        }
+
+        private string GetStoresTableSchema()
+        {
+            return @"
+            CREATE TABLE Stores (
+                Code INTEGER PRIMARY KEY,
+                Name TEXT NOT NULL,
+                Address TEXT NOT NULL
+            );";
+        }
+
+        private string GetProductsTableSchema()
+        {
+            return @"
+            CREATE TABLE Products (
+                Name TEXT NOT NULL,
+                StoreCode INTEGER NOT NULL,
+                Quantity INTEGER NOT NULL,
+                Price REAL NOT NULL,
+                PRIMARY KEY (Name, StoreCode),
+                FOREIGN KEY (StoreCode) REFERENCES Stores (Code)
+            );";
+        }
     }
 
     static void Main()
@@ -35,9 +107,11 @@ class Program
         {
             dataAccessLayer = new CsvFileDAL();
         }
-        else if (dalType == "SQL")
+        else if (dalType == "SQLite")
         {
-            dataAccessLayer = new SqlDatabaseDAL(connectionString);
+            var databaseInitializer = new DatabaseInitializer(connectionString);
+            databaseInitializer.InitializeDatabase();
+            dataAccessLayer = new SqliteDatabaseDAL(connectionString);
         }
         else
         {

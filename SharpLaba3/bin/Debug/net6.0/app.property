@@ -1,8 +1,8 @@
 # app.property
 
 # Указываем, какую имплементацию DAL использовать
-# Возможные значения: SQL или CSV
-DALType:SQL
-SQLConnectionString:Data Source=LAPTOP-TSKV2P4G\SQLEXPRESS;Initial Catalog=StoreDatabase;Integrated Security=True;
+# Возможные значения: SQLite или CSV
+DALType:SQLite
+SQLiteConnectionString:Data Source=storeDatabase.db;
 
 

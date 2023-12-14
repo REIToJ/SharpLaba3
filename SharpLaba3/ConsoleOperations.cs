@@ -123,7 +123,7 @@ public class ConsoleOperations
             Console.WriteLine($"Products you can buy with {budget} rubles:");
             foreach (var product in affordableProducts)
             {
-                Console.WriteLine($"{product.Name} - {product.Price} rubles each");
+                Console.WriteLine($"{product.Quantity} {product.Name} - {product.Price} rubles each");
             }
         }
         else
