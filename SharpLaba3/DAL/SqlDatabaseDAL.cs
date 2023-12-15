@@ -12,6 +12,34 @@ public class SqliteDatabaseDAL : IDataAccessLayer
         _connectionString = connectionString;
     }
 
+    private void ValidateStoreExists(int storeCode)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = new SqliteCommand("SELECT COUNT(*) FROM Stores WHERE Code = @StoreCode", connection);
+        command.Parameters.AddWithValue("@StoreCode", storeCode);
+
+        int exists = Convert.ToInt32(command.ExecuteScalar());
+        if (exists == 0)
+        {
+            throw new InvalidOperationException($"Store with code {storeCode} does not exist.");
+        }
+    }
+
+    private bool ProductExists(string productName, int storeCode)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = new SqliteCommand("SELECT COUNT(*) FROM Products WHERE Name = @Name AND StoreCode = @StoreCode", connection);
+        command.Parameters.AddWithValue("@Name", productName);
+        command.Parameters.AddWithValue("@StoreCode", storeCode);
+
+        int exists = Convert.ToInt32(command.ExecuteScalar());
+        return exists > 0;
+    }
+
     public void CreateStore(Store store)
     {
         using var connection = new SqliteConnection(_connectionString);
@@ -27,6 +55,8 @@ public class SqliteDatabaseDAL : IDataAccessLayer
 
     public void CreateProduct(Product product)
     {
+        ValidateStoreExists(product.StoreCode);
+
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
 
@@ -41,18 +71,14 @@ public class SqliteDatabaseDAL : IDataAccessLayer
 
     public void ImportGoodsToStore(int storeCode, List<Product> products)
     {
+        ValidateStoreExists(storeCode);
+
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
 
         foreach (var product in products)
         {
-            using var checkCommand = new SqliteCommand("SELECT COUNT(*) FROM Products WHERE Name = @Name AND StoreCode = @StoreCode", connection);
-            checkCommand.Parameters.AddWithValue("@Name", product.Name);
-            checkCommand.Parameters.AddWithValue("@StoreCode", storeCode);
-
-            int exists = Convert.ToInt32(checkCommand.ExecuteScalar());
-
-            if (exists > 0)
+            if (ProductExists(product.Name, storeCode))
             {
                 using var updateCommand = new SqliteCommand("UPDATE Products SET Quantity = Quantity + @Quantity WHERE Name = @Name AND StoreCode = @StoreCode", connection);
                 updateCommand.Parameters.AddWithValue("@Quantity", product.Quantity);
@@ -74,10 +100,14 @@ public class SqliteDatabaseDAL : IDataAccessLayer
 
     public Store FindCheapestStoreForProduct(string productName)
     {
+        //if (!ProductExists(productName, -1)) // -1 as a placeholder for any store code
+        //{
+        //    throw new InvalidOperationException($"Product {productName} does not exist in any store.");
+        //}
+
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
 
-        // Adjusted SQL query to use LIMIT instead of TOP
         using var command = new SqliteCommand(
             "SELECT S.* FROM Stores S " +
             "INNER JOIN Products P ON S.Code = P.StoreCode " +
@@ -99,7 +129,6 @@ public class SqliteDatabaseDAL : IDataAccessLayer
 
         return null;
     }
-
 
     public List<Product> GetAffordableProductsInStore(int storeCode, decimal budget)
     {
@@ -132,11 +161,17 @@ public class SqliteDatabaseDAL : IDataAccessLayer
         return affordableProducts;
     }
 
-
-
-
     public decimal PurchaseGoods(int storeCode, Dictionary<string, int> goodsToBuy)
     {
+        ValidateStoreExists(storeCode);
+        foreach (var item in goodsToBuy)
+        {
+            if (!ProductExists(item.Key, storeCode))
+            {
+                throw new InvalidOperationException($"Product {item.Key} does not exist in store {storeCode}.");
+            }
+        }
+
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
 
@@ -182,31 +217,19 @@ public class SqliteDatabaseDAL : IDataAccessLayer
 
     public Store FindCheapestStoreForBatch(Dictionary<string, int> goodsToBuy)
     {
-        var stores = GetAllStores();
-        Store cheapestStore = null;
-        decimal lowestTotalCost = decimal.MaxValue;
-
-        foreach (var store in stores)
+        foreach (var item in goodsToBuy)
         {
-            decimal totalCostForStore = CalculateTotalCostForStore(store.Code, goodsToBuy);
-            if (totalCostForStore >= 0 && totalCostForStore < lowestTotalCost)
-            {
-                lowestTotalCost = totalCostForStore;
-                cheapestStore = store;
-            }
+            //if (!ProductExists(item.Key, -1))
+            //{
+            //    throw new InvalidOperationException($"Product {item.Key} does not exist in any store.");
+            //}
         }
 
-        return cheapestStore;
-    }
-
-    private List<Store> GetAllStores()
-    {
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
 
         var command = new SqliteCommand("SELECT * FROM Stores", connection);
         using var reader = command.ExecuteReader();
-
         var stores = new List<Store>();
         while (reader.Read())
         {
@@ -218,32 +241,36 @@ public class SqliteDatabaseDAL : IDataAccessLayer
             });
         }
 
-        return stores;
-    }
+        Store cheapestStore = null;
+        decimal lowestTotalCost = decimal.MaxValue;
 
-    private decimal CalculateTotalCostForStore(int storeCode, Dictionary<string, int> goodsToBuy)
-    {
-        decimal totalCost = 0;
-
-        foreach (var item in goodsToBuy)
+        foreach (var store in stores)
         {
-            var productCost = GetCostForProduct(storeCode, item.Key, item.Value);
-            if (productCost < 0) // Product not available in required quantity
+            decimal totalCostForStore = 0;
+
+            foreach (var item in goodsToBuy)
             {
-                return -1;
+                var productCost = GetCostForProductInStore(store.Code, item.Key, item.Value, connection);
+                if (productCost < 0) // Product not available in required quantity
+                {
+                    totalCostForStore = -1;
+                    break;
+                }
+                totalCostForStore += productCost;
             }
 
-            totalCost += productCost;
+            if (totalCostForStore >= 0 && totalCostForStore < lowestTotalCost)
+            {
+                lowestTotalCost = totalCostForStore;
+                cheapestStore = store;
+            }
         }
 
-        return totalCost;
+        return cheapestStore;
     }
 
-    private decimal GetCostForProduct(int storeCode, string productName, int quantity)
+    private decimal GetCostForProductInStore(int storeCode, string productName, int quantity, SqliteConnection connection)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
-
         var command = new SqliteCommand("SELECT Price, Quantity FROM Products WHERE StoreCode = @StoreCode AND Name = @Name", connection);
         command.Parameters.AddWithValue("@StoreCode", storeCode);
         command.Parameters.AddWithValue("@Name", productName);
@@ -256,5 +283,6 @@ public class SqliteDatabaseDAL : IDataAccessLayer
 
         return -1; // Product not available or not enough quantity
     }
+
 
 }

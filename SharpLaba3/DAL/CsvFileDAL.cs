@@ -8,6 +8,18 @@ public class CsvFileDAL : IDataAccessLayer
     private readonly string storesFilePath = "stores.csv";
     private readonly string productsFilePath = "products.csv";
 
+    private bool StoreExists(int storeCode)
+    {
+        var stores = ReadStoresFromFile();
+        return stores.Any(s => s.Code == storeCode);
+    }
+
+    private bool ProductExists(string productName, int storeCode)
+    {
+        var products = ReadProductsFromFile();
+        return products.Any(p => p.Name == productName && p.StoreCode == storeCode);
+    }
+
     public void CreateStore(Store store)
     {
         var stores = ReadStoresFromFile();
@@ -24,6 +36,11 @@ public class CsvFileDAL : IDataAccessLayer
 
     public void CreateProduct(Product product)
     {
+        if (!StoreExists(product.StoreCode))
+        {
+            throw new InvalidOperationException($"Store with code {product.StoreCode} does not exist.");
+        }
+
         var products = ReadProductsFromFile();
         var existingProduct = products.FirstOrDefault(p => p.Name == product.Name && p.StoreCode == product.StoreCode);
 
@@ -43,6 +60,11 @@ public class CsvFileDAL : IDataAccessLayer
 
     public void ImportGoodsToStore(int storeCode, List<Product> products)
     {
+        if (!StoreExists(storeCode))
+        {
+            throw new InvalidOperationException($"Store with code {storeCode} does not exist.");
+        }
+
         var existingProducts = ReadProductsFromFile();
 
         foreach (var product in products)
@@ -63,6 +85,11 @@ public class CsvFileDAL : IDataAccessLayer
 
     public Store FindCheapestStoreForProduct(string productName)
     {
+        //if (!ProductExists(productName, -1)) // -1 as a placeholder for any store code
+        //{
+        //    throw new InvalidOperationException($"Product {productName} does not exist in any store.");
+        //}
+
         var products = ReadProductsFromFile();
         var cheapestProduct = products.Where(p => p.Name == productName).OrderBy(p => p.Price).FirstOrDefault();
 
@@ -77,12 +104,22 @@ public class CsvFileDAL : IDataAccessLayer
 
     public List<Product> GetAffordableProductsInStore(int storeCode, decimal budget)
     {
+        if (!StoreExists(storeCode))
+        {
+            throw new InvalidOperationException($"Store with code {storeCode} does not exist.");
+        }
+
         var products = ReadProductsFromFile();
         return products.Where(p => p.StoreCode == storeCode && p.Price <= budget).ToList();
     }
 
     public decimal PurchaseGoods(int storeCode, Dictionary<string, int> goodsToBuy)
     {
+        if (!StoreExists(storeCode))
+        {
+            throw new InvalidOperationException($"Store with code {storeCode} does not exist.");
+        }
+
         var products = ReadProductsFromFile();
         decimal totalCost = 0;
 
@@ -106,6 +143,14 @@ public class CsvFileDAL : IDataAccessLayer
 
     public Store FindCheapestStoreForBatch(Dictionary<string, int> goodsToBuy)
     {
+        foreach (var item in goodsToBuy)
+        {
+            //if (!ProductExists(item.Key, -1)) // -1 as a placeholder for any store code
+            //{
+            //    throw new InvalidOperationException($"Product {item.Key} does not exist in any store.");
+            //}
+        }
+
         var stores = ReadStoresFromFile();
         var products = ReadProductsFromFile();
         Store cheapestStore = null;
