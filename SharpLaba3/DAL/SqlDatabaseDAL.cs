@@ -80,10 +80,11 @@ public class SqliteDatabaseDAL : IDataAccessLayer
         {
             if (ProductExists(product.Name, storeCode))
             {
-                using var updateCommand = new SqliteCommand("UPDATE Products SET Quantity = Quantity + @Quantity WHERE Name = @Name AND StoreCode = @StoreCode", connection);
+                using var updateCommand = new SqliteCommand("UPDATE Products SET Quantity = Quantity + @Quantity AND Price + @Price WHERE Name = @Name AND StoreCode = @StoreCode", connection);
                 updateCommand.Parameters.AddWithValue("@Quantity", product.Quantity);
                 updateCommand.Parameters.AddWithValue("@Name", product.Name);
                 updateCommand.Parameters.AddWithValue("@StoreCode", storeCode);
+                updateCommand.Parameters.AddWithValue("@Price", product.Price);
                 updateCommand.ExecuteNonQuery();
             }
             else

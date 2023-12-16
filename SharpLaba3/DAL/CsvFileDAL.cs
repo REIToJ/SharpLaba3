@@ -73,6 +73,7 @@ public class CsvFileDAL : IDataAccessLayer
             if (existingProduct != null)
             {
                 existingProduct.Quantity += product.Quantity;
+                existingProduct.Price = product.Price;
             }
             else
             {
